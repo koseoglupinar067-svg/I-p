@@ -1,0 +1,90 @@
+name: Build KiteWare
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build JAR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Extract source
+        shell: bash
+        run: |
+          set -e
+
+          ZIP=$(find . -maxdepth 2 -type f -name "*source*.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "Source ZIP bulunamadı!"
+            exit 1
+          fi
+
+          echo "ZIP: $ZIP"
+
+          mkdir -p source
+          unzip -q "$ZIP" -d source
+
+          echo "Çıkarılan dosyalar:"
+          find source -maxdepth 4 -type f | head -100
+
+      - name: Find Gradle project
+        shell: bash
+        run: |
+          set -e
+
+          GRADLEW=$(find source -type f -name "gradlew" | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "gradlew bulunamadı!"
+            find source -maxdepth 5 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Proje:"
+          echo "$PROJECT_DIR"
+
+      - name: Make Gradle executable
+        run: chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ./gradlew clean build \
+            --no-daemon \
+            --stacktrace
+
+      - name: Show JAR
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "=== JAR ==="
+          ls -lah build/libs/
+          find build/libs -name "*.jar" -print
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: KiteWare-JAR
+          path: ${{ env.PROJECT_DIR }}/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
